@@ -109,10 +109,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
     io.resps.sinkC.tag === mshr.io.status.bits.tag
   )
 
+  val needHint2llc = io.fromMainPipe.mshr_alloc_s3.bits.task.hint2llc.getOrElse(false.B)
   mshrs.zipWithIndex.foreach {
     case (m, i) =>
       m.io.id := i.U
-      m.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid
+      m.io.alloc.valid := selectedMSHROH(i) && io.fromMainPipe.mshr_alloc_s3.valid && (!needHint2llc)
       m.io.alloc.bits := io.fromMainPipe.mshr_alloc_s3.bits
 
       m.io.resps.sink_c.valid := io.resps.sinkC.valid && resp_sinkC_match_vec(i)
@@ -141,6 +142,11 @@ class MSHRCtl(implicit p: Parameters) extends L2Module {
   io.sourceA <> acquireUnit.io.sourceA
   io.pbRead <> acquireUnit.io.pbRead
   io.pbResp <> acquireUnit.io.pbResp
+
+  /* SPP hint to llc task*/
+  val llcReqBuf = Module(new LlcRequestBuffer())
+  llcReqBuf.io.llcRequest <> io.fromMainPipe.mshr_alloc_s3
+  acquireUnit.io.hint2llcTask <> llcReqBuf.io.llcReq
 
   /* Probe upwards */
   val sourceB = Module(new SourceB())

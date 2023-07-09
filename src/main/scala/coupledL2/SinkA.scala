@@ -104,6 +104,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.mshrTask := false.B
     task.aliasTask.foreach(_ := false.B)
     task.fromL2pft.foreach(_ := req.isBOP)
+    task.hint2llc.foreach(_ := req.hint2llc)
     task.needHint.foreach(_ := false.B)
     task.reqSource := MemReqSource.L2Prefetch.id.U
     task

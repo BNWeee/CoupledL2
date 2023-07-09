@@ -213,7 +213,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   ms_task.needHint.foreach(_  := req_s3.needHint.get)
   ms_task.way              := dirResult_s3.way
   ms_task.reqSource        := req_s3.reqSource
-
+  ms_task.hint2llc.foreach(_  := req_s3.hint2llc.get)
   /* ======== Resps to SinkA/B/C Reqs ======== */
   val sink_resp_s3 = WireInit(0.U.asTypeOf(Valid(new TaskBundle))) // resp for sinkA/B/C request that does not need to alloc mshr
   val mainpipe_release = a_need_replacement && !meta_has_clients_s3

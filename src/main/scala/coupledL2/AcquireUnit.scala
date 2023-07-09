@@ -23,25 +23,30 @@ import utility._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import chipsalliance.rocketchip.config.Parameters
-import huancun.{PreferCacheKey}
+import huancun.{PreferCacheKey, Hint2llcKey}
 
 class AcquireUnit(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
     val sourceA = DecoupledIO(new TLBundleA(edgeOut.bundle))
     val task = Flipped(DecoupledIO(new SourceAReq))
     val pbRead = DecoupledIO(new PutBufferRead)
+    val hint2llcTask = Flipped(DecoupledIO(new SourceAReq))
     val pbResp = Flipped(ValidIO(new PutBufferEntry))
   })
 
   val a = io.sourceA
   val a_out = Wire(a.cloneType)
   val a_acquire = Wire(a.cloneType)
+  val a_llc = Wire(a.cloneType)
   val a_put = Wire(a.cloneType)
   val task = io.task.bits
   val put = task.opcode === PutFullData || task.opcode === PutPartialData
+  val llc_task = io.hint2llcTask.bits
   val busy = RegInit(false.B)
 
   when (io.task.fire() && put) {
+    busy := true.B
+  }.elsewhen(io.hint2llcTask.fire()){
     busy := true.B
   }
 
@@ -73,6 +78,20 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   when (s1_valid && s1_cango) { s1_valid := false.B }
   when (s1_latch) { s1_valid := true.B }
 
+  a_llc.valid := io.hint2llcTask.valid && !put
+  a_llc.bits.opcode := llc_task.opcode
+  a_llc.bits.param := llc_task.param
+  a_llc.bits.size := offsetBits.U
+  a_llc.bits.source := llc_task.source
+  a_llc.bits.address := Cat(llc_task.tag, llc_task.set, 0.U(offsetBits.W))
+  a_llc.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
+  a_llc.bits.data := DontCare
+  a_llc.bits.echo.lift(DirtyKey).foreach(_ := true.B)
+  a_llc.bits.user.lift(PreferCacheKey).foreach(_ := false.B)
+  a_llc.bits.user.lift(Hint2llcKey).foreach(_ := true.B)
+  a_llc.bits.user.lift(utility.ReqSourceKey).foreach(_ := task.reqSource)
+  a_llc.bits.corrupt := false.B
+
   a_acquire.valid := io.task.valid && !put
   a_acquire.bits.opcode := task.opcode
   a_acquire.bits.param := task.param
@@ -99,12 +118,13 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   a_put.bits.data := s1_pb_latch.data.data
   a_put.bits.corrupt := false.B
 
-  TLArbiter.lowest(edgeOut, a_out, a_put, a_acquire)
+  TLArbiter.lowest(edgeOut, a_out, a_put, a_acquire, a_llc)
   io.sourceA <> a_out
   io.sourceA.valid := a_out.valid && !(a_acquire.valid && !a_put.valid && busy)
 
   io.task.ready := a_acquire.ready && !busy
-
+  io.hint2llcTask.ready := a_llc.ready && !busy
+  
   io.pbRead.valid := busy && s1_ready
   io.pbRead.bits.idx := s0_task.pbIdx
   io.pbRead.bits.count := s0_count
