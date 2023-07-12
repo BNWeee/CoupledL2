@@ -23,7 +23,6 @@ import utility._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import chipsalliance.rocketchip.config.Parameters
-import huancun.{PreferCacheKey, Hint2llcKey}
 
 class AcquireUnit(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -33,7 +32,7 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
     val hint2llcTask = Flipped(DecoupledIO(new SourceAReq))
     val pbResp = Flipped(ValidIO(new PutBufferEntry))
   })
-
+  dontTouch(io)
   val a = io.sourceA
   val a_out = Wire(a.cloneType)
   val a_acquire = Wire(a.cloneType)
@@ -87,7 +86,7 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   a_llc.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
   a_llc.bits.data := DontCare
   a_llc.bits.echo.lift(DirtyKey).foreach(_ := true.B)
-  a_llc.bits.user.lift(PreferCacheKey).foreach(_ := false.B)
+  a_llc.bits.user.lift(PrefetchKey).foreach(_ := false.B)
   a_llc.bits.user.lift(Hint2llcKey).foreach(_ := true.B)
   a_llc.bits.user.lift(utility.ReqSourceKey).foreach(_ := task.reqSource)
   a_llc.bits.corrupt := false.B
@@ -101,7 +100,8 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   a_acquire.bits.mask := Fill(edgeOut.manager.beatBytes, 1.U(1.W))
   a_acquire.bits.data := DontCare
   a_acquire.bits.echo.lift(DirtyKey).foreach(_ := true.B)
-  a_acquire.bits.user.lift(PreferCacheKey).foreach(_ := false.B)
+  a_acquire.bits.user.lift(PrefetchKey).foreach(_ := false.B)
+  a_acquire.bits.user.lift(Hint2llcKey).foreach(_ := false.B)
   a_acquire.bits.user.lift(utility.ReqSourceKey).foreach(_ := task.reqSource)
   a_acquire.bits.corrupt := false.B
 
@@ -112,7 +112,8 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   a_put.bits.source := s1_task.source
   a_put.bits.address := Cat(s1_task.tag, s1_task.set, s1_task.off)
   a_put.bits.echo.lift(DirtyKey).foreach(_ := true.B)
-  a_put.bits.user.lift(PreferCacheKey).foreach(_ := false.B)
+  a_put.bits.user.lift(PrefetchKey).foreach(_ := false.B)
+  a_put.bits.user.lift(Hint2llcKey).foreach(_ := false.B)
   a_put.bits.user.lift(utility.ReqSourceKey).foreach(_ := MemReqSource.NoWhere.id.U) //Ignore: where does Put comes from
   a_put.bits.mask := s1_pb_latch.mask
   a_put.bits.data := s1_pb_latch.data.data
@@ -121,7 +122,7 @@ class AcquireUnit(implicit p: Parameters) extends L2Module {
   TLArbiter.lowest(edgeOut, a_out, a_put, a_acquire, a_llc)
   io.sourceA <> a_out
   io.sourceA.valid := a_out.valid && !(a_acquire.valid && !a_put.valid && busy)
-
+  dontTouch(io.sourceA)
   io.task.ready := a_acquire.ready && !busy
   io.hint2llcTask.ready := a_llc.ready && !busy
   

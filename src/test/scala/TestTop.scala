@@ -400,6 +400,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         sets = 128,
         clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
         echoField = Seq(DirtyField()),
+        reqField = Seq(PrefetchField(),Hint2llcField()),
         prefetch = Some(BOPParameters(
           rrTableEntries = 16,
           rrTagBits = 6
@@ -428,6 +429,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
           blockGranularity = log2Ceil(128)
         ),
       ),
+      reqField = Seq(PrefetchField(),Hint2llcField()),
       echoField = Seq(DirtyField()),
       simulation = true
     )

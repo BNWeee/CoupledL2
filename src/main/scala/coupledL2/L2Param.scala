@@ -64,6 +64,17 @@ case class PrefetchField() extends BundleField(PrefetchKey) {
   }
 }
 
+
+case object Hint2llcKey extends ControlKey[Bool](name = "hint2llc")
+
+case class Hint2llcField() extends BundleField(Hint2llcKey) {
+  override def data: Bool = Output(Bool())
+
+  override def default(x: Bool): Unit = {
+    x := false.B
+  }
+}
+
 case object IsHitKey extends ControlKey[Bool](name = "isHitInL3")
 
 case class IsHitField() extends BundleField(IsHitKey) {
