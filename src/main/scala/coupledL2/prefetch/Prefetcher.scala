@@ -107,26 +107,37 @@ class PrefetchQueue(implicit p: Parameters) extends PrefetchModule {
 
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
-  val io_l2_pf_en = IO(Input(Bool()))
-
-  prefetchOpt.get match {
-    case bop: BOPParameters =>
-      val pft = Module(new BestOffsetPrefetch)
-      val pftQueue = Module(new PrefetchQueue)
-      val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
-      pft.io.train <> io.train
-      pft.io.resp <> io.resp
-      pftQueue.io.enq <> pft.io.req
-      pipe.io.in <> pftQueue.io.deq
-      io.req <> pipe.io.out
-    case receiver: PrefetchReceiverParams =>
+  val io_pf_en = IO(Input(Bool()))
+  val io_llc = if(prefetchSendOpt.nonEmpty) Some(IO(Output(new l2PrefetchSend))) else None
+  //configSwitch
+  //L2-->1.l1prefetchRecv 2.l2prefetch 3.l3prefetchSend
+  //L3-->1.l2prefetchRecv 2.l3prefetch 3.None
+  val configTuple = (prefetchRecvOpt.nonEmpty, prefetchOpt.nonEmpty, prefetchSendOpt.nonEmpty,cacheParams.level)
+  println(configTuple)
+  configTuple match {
+    case(true ,false,false,2) => {
+    }
+    case(false,true ,false,2) => {
+      prefetchOpt.get match {
+        case bop: BOPParameters =>
+          val pft = Module(new BestOffsetPrefetch)
+          val pftQueue = Module(new PrefetchQueue)
+          val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
+          pft.io.train <> io.train
+          pft.io.resp <> io.resp
+          pftQueue.io.enq <> pft.io.req
+          pipe.io.in <> pftQueue.io.deq
+          io.req <> pipe.io.out
+      }
+    }
+    case(true ,true ,true ,2) => {
+      println("l2Prefetch Config: l1pfRecv + l2bop + l3pfSend")
+      println(s"L${cacheParams.name} prefetcher: BestOffsetPrefetch+PrefetchSender")
       val l1_pf = Module(new PrefetchReceiver())
-      val bop = Module(new BestOffsetPrefetch()(p.alterPartial({
-        case L2ParamKey => p(L2ParamKey).copy(prefetch = Some(BOPParameters()))
-      })))
+      val bop = Module(new BestOffsetPrefetch())
       val pftQueue = Module(new PrefetchQueue)
       val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
-      val bop_en = RegNextN(io_l2_pf_en, 2, Some(true.B))
+      val bop_en = RegNextN(io_pf_en, 2, Some(true.B))
       // l1 prefetch
       l1_pf.io.recv_addr := ValidIODelay(io.recv_addr, 2)
       l1_pf.io.train <> DontCare
@@ -135,7 +146,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       bop.io.train <> io.train
       bop.io.resp <> io.resp
       // send to prq
-      pftQueue.io.enq.valid := l1_pf.io.req.valid || (bop_en && bop.io.req.valid)
+      pftQueue.io.enq.valid := false.B && (l1_pf.io.req.valid || (bop_en && bop.io.req.valid))
       pftQueue.io.enq.bits := Mux(l1_pf.io.req.valid,
         l1_pf.io.req.bits,
         bop.io.req.bits
@@ -144,9 +155,36 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       bop.io.req.ready := true.B
       pipe.io.in <> pftQueue.io.deq
       io.req <> pipe.io.out
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromL1", l1_pf.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_fromL2", bop_en && bop.io.req.valid)
-      XSPerfAccumulate(cacheParams, "prefetch_req_L1L2_overlapped", l1_pf.io.req.valid && bop_en && bop.io.req.valid)
-    case _ => assert(cond = false, "Unknown prefetcher")
+
+      //llc prefetchSend
+      io_llc.get.pf_en := true.B
+      io_llc.get.addr_valid := io.req.valid
+      io_llc.get.addr := Cat(io.req.bits.tag, io.req.bits.set, 0.U((offsetBits + bankBits).W))
+    }
+    case(true ,false,false,3) => {
+      println(s"L${cacheParams.name}Prefetch Config: l2bop hint2LLC + l3PrefetchReceiver_llc")
+      val l3_pfReceiver = Module(new PrefetchReceiver_llc())
+      l3_pfReceiver.io.recv_addr := io.recv_addr
+      io.train <> l3_pfReceiver.io.train
+      io.resp <> l3_pfReceiver.io.resp
+      io.req <> l3_pfReceiver.io.req
+    }
+    case(false,true ,false,3) =>{
+      prefetchOpt.get match {
+        case bop: BOPParameters =>
+          val pft = Module(new BestOffsetPrefetch)
+          val pftQueue = Module(new PrefetchQueue)
+          val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
+          pft.io.train <> io.train
+          pft.io.resp <> io.resp
+          pftQueue.io.enq <> pft.io.req
+          pipe.io.in <> pftQueue.io.deq
+          io.req <> pipe.io.out
+      }
+    }
+    case(_,_,_,_) => {
+      io := DontCare
+      io_pf_en := DontCare
+    }
   }
 }

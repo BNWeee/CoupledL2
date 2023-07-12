@@ -379,7 +379,23 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
   val l2xbar = TLXbar()
   val ram = LazyModule(new TLRAM(AddressSet(0, 0xffffL), beatBytes = 32))
   var master_nodes: Seq[TLClientNode] = Seq() // TODO
-
+  val l2=(0 until nrL2) map (i=>
+    LazyModule(new CoupledL2()(new Config((_, _, _) => {
+      case L2ParamKey => L2Param(
+        name = s"l2$i",
+        ways = 4,
+        sets = 128,
+        clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+        echoField = Seq(DirtyField()),
+        prefetchRecv = None,//Some(PrefetchReceiverParams()),
+        prefetch = Some(BOPParameters(
+          rrTableEntries = 16,
+          rrTagBits = 6
+        )),
+        prefetchSend = None//Some(PrefetchReceiverParams())
+      )
+    })))
+    )
   (0 until nrL2).map{i =>
     val l1d = createClientNode(s"l1d$i", 32)
     val l1i = TLClientNode(Seq(
@@ -393,19 +409,7 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
     master_nodes = master_nodes ++ Seq(l1d, l1i) // TODO
 
     val l1xbar = TLXbar()
-    val l2node = LazyModule(new CoupledL2()(new Config((_, _, _) => {
-      case L2ParamKey => L2Param(
-        name = s"l2$i",
-        ways = 4,
-        sets = 128,
-        clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
-        echoField = Seq(DirtyField()),
-        prefetch = Some(BOPParameters(
-          rrTableEntries = 16,
-          rrTagBits = 6
-        ))
-      )
-    }))).node
+    val l2node = l2(i).node
 
     l1xbar := TLBuffer() := l1i
     l1xbar := TLBuffer() := l1d
@@ -429,9 +433,15 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         ),
       ),
       echoField = Seq(DirtyField()),
-      simulation = true
+      simulation = true,
+      prefetch =  Some(huancun.prefetch.BOPParameters())
     )
   })))
+//  val l3pf_RecvXbar = LazyModule(new PrefetchReceiverXbar(nrL2))
+//  for (i <- 0 until nrL2) {
+//    l3pf_RecvXbar.inNode(i) := l2(i).pf_l2send_node.get
+//  }
+//  l3.pf_l3recv_node.get := l3pf_RecvXbar.outNode.head
 
   ram.node :=
     TLXbar() :=*
@@ -530,7 +540,7 @@ object TestTop_fullSys extends App {
   val config = new Config((_, _, _) => {
     case L2ParamKey => L2Param(
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
-      echoField = Seq(DirtyField())
+      echoField = Seq(DirtyField()),
     )
     case HCCacheParamsKey => HCCacheParameters(
       echoField = Seq(DirtyField())

@@ -59,7 +59,9 @@ trait HasCoupledL2Parameters {
   
   // Prefetch
   val prefetchOpt = cacheParams.prefetch
-  val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit
+  val prefetchSendOpt = cacheParams.prefetchSend
+  val prefetchRecvOpt = cacheParams.prefetchRecv
+  val hasPrefetchBit = (prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit)||(prefetchRecvOpt.nonEmpty && prefetchSendOpt.get.hasPrefetchBit)
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   val useFIFOGrantBuffer = true
@@ -212,10 +214,18 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     managerFn = managerPortParams
   )
 
-  val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] = prefetchOpt match {
-    case Some(_: PrefetchReceiverParams) =>
-      Some(BundleBridgeSink(Some(() => new PrefetchRecv)))
-    case _ => None
+  val pf_l2send_node: Option[BundleBridgeSource[l2PrefetchRecv]] = (cacheParams.level,prefetchSendOpt) match {
+    case (2,Some(x)) => Some(BundleBridgeSource(Some(() => new l2PrefetchRecv())))
+    case (_,_) => None
+  }
+  val pf_l2recv_node = (cacheParams.level,prefetchRecvOpt) match {
+    case (2,Some(x)) => Some(BundleBridgeSink(Some(() => new l2PrefetchRecv)))
+    case (_,_) => None
+  }
+
+  val pf_l3recv_node = (cacheParams.level,prefetchRecvOpt) match {
+    case (3,Some(x)) => Some(BundleBridgeSink(Some(() => new l2PrefetchRecv())))
+    case (_,_) => None
   }
 
   lazy val module = new LazyModuleImp(this) {
@@ -270,15 +280,32 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
     }
-    pf_recv_node match {
-      case Some(x) =>
+    (cacheParams.level,pf_l2send_node) match{
+      case(2,Some(x)) => {
+        pf_l2send_node.get.out.head._1 <> prefetcher.get.io_llc.get
+      }
+      case (_,_) => None
+    }
+    (cacheParams.level,pf_l2recv_node) match {
+      case (2,Some(x)) =>
         prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
         prefetcher.get.io.recv_addr.bits := x.in.head._1.addr
-        prefetcher.get.io_l2_pf_en := x.in.head._1.l2_pf_en
-      case None =>
+        prefetcher.get.io_pf_en := x.in.head._1.pf_en
+      case (_,_) =>
         prefetcher.foreach(_.io.recv_addr := DontCare)
-        prefetcher.foreach(_.io_l2_pf_en := DontCare)
+        prefetcher.foreach(_.io_pf_en := DontCare)
     }
+    (cacheParams.level, pf_l3recv_node) match {
+      case (3, Some(x)) =>
+        prefetcher.get.io.recv_addr.valid := x.in.head._1.addr_valid
+        prefetcher.get.io.recv_addr.bits := x.in.head._1.addr
+        prefetcher.get.io_pf_en := x.in.head._1.pf_en
+        prefetcher.get.io.train := DontCare
+      case (_, _) =>
+        prefetcher.foreach(_.io.recv_addr := DontCare)
+        prefetcher.foreach(_.io_pf_en := DontCare)
+    }
+
 
     def restoreAddress(x: UInt, idx: Int) = {
       restoreAddressUInt(x, idx.U)
