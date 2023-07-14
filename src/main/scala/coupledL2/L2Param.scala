@@ -88,6 +88,7 @@ case class DirtyField() extends BundleField(DirtyKey) {
 case class L2Param
 (
   name: String = "L2",
+  level: Int = 2,
   ways: Int = 4,
   sets: Int = 128,
   dirNBanks: Int = 8,
@@ -124,6 +125,8 @@ case class L2Param
   hartIds: Seq[Int] = Seq[Int](),
   // Prefetch
   prefetch: Option[PrefetchParameters] = None,
+  prefetchSend: Option[PrefetchParameters] = None,
+  prefetchRecv: Option[PrefetchParameters] = None,
   // Performance analysis
   enablePerf: Boolean = true,
   // Monitor

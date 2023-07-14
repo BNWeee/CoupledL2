@@ -135,6 +135,7 @@ class GrantBuffer(implicit p: Parameters) extends BaseGrantBuffer {
 
   def toTLBundleD(task: TaskBundle, data: UInt = 0.U) = {
     val d = Wire(new TLBundleD(edgeIn.bundle))
+    d := DontCare
     d.opcode := task.opcode
     d.param := task.param
     d.size := offsetBits.U
