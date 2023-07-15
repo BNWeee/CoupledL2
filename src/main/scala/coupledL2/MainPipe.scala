@@ -415,10 +415,10 @@ class MainPipe(implicit p: Parameters) extends L2Module {
   }
   io.prefetchEvict.foreach{
     evict =>
-    evict.valid := task_s3.valid && ((req_acquire_s3 || req_get_s3)) && req_s3.needHint.getOrElse(false.B) &&
-      !meta_s3.state=/=INVALID && (!dirResult_s3.hit || meta_s3.prefetch.get) //fixme: maybe wrong
-      evict.bits.tag := req_s3.tag
-      evict.bits.set := req_s3.set
+      evict.valid := task_s3.valid && ((req_acquire_s3 || req_get_s3)) && req_s3.needHint.getOrElse(false.B) &&
+        !meta_s3.state=/=INVALID && (!dirResult_s3.hit || meta_s3.prefetch.get) //fixme: maybe wrong
+        evict.bits.tag := req_s3.tag
+        evict.bits.set := req_s3.set
   }
 
   /* ======== Stage 4 ======== */
@@ -593,11 +593,11 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       alloc_state.w_rprobeacklast := false.B
     }
     // need trigger a prefetch, send PrefetchTrain msg to Prefetcher
-    // prefetchOpt.foreach {_ =>
-    //   when (req_s3.fromA && req_s3.needHint.getOrElse(false.B) && (!dirResult_s3.hit || meta_s3.prefetch.get)) {
-    //     alloc_state.s_triggerprefetch.foreach(_ := false.B)
-    //   }
-    // }
+     prefetchOpt.foreach {_ =>
+       when (req_s3.fromA && req_s3.needHint.getOrElse(false.B) && (!dirResult_s3.hit || meta_s3.prefetch.get)) {
+         alloc_state.s_triggerprefetch.foreach(_ := false.B)
+       }
+     }
   }
   when(req_s3.fromB) {
     // Only consider the situation when mshr needs to be allocated

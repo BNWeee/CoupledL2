@@ -206,8 +206,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     managerFn = managerPortParams
   )
 
-  val pf_l2send_node: Option[BundleBridgeSource[huancun.prefetch.l2PrefetchSend]] = (cacheParams.level,prefetchSendOpt) match {
-    case (2,Some(x)) => Some(BundleBridgeSource(Some(() => new huancun.prefetch.l2PrefetchSend())))
+  val pf_l2send_node: Option[BundleBridgeSource[l2PrefetchSend]] = (cacheParams.level,prefetchSendOpt) match {
+    case (2,Some(x)) => Some(BundleBridgeSource(Some(() => new l2PrefetchSend())))
     case (_,_) => None
   }
   val pf_l2recv_node = hasPrefetchRecv match {

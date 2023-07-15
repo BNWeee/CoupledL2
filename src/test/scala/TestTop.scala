@@ -387,12 +387,11 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
         sets = 128,
         clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
         echoField = Seq(DirtyField()),
-        prefetchRecv = None,//Some(PrefetchReceiverParams()),
         prefetch = Some(BOPParameters(
           rrTableEntries = 16,
           rrTagBits = 6
         )),
-        prefetchSend = None//Some(PrefetchReceiverParams())
+        prefetchSend = Some(PrefetchReceiverParams())
       )
     })))
     )
@@ -434,14 +433,15 @@ class TestTop_fullSys()(implicit p: Parameters) extends LazyModule {
       ),
       echoField = Seq(DirtyField()),
       simulation = true,
-      prefetch =  Some(huancun.prefetch.BOPParameters())
+      prefetchRecv = Some(huancun.prefetch.PrefetchReceiverParams()),
+      prefetch =  None
     )
   })))
-//  val l3pf_RecvXbar = LazyModule(new PrefetchReceiverXbar(nrL2))
-//  for (i <- 0 until nrL2) {
-//    l3pf_RecvXbar.inNode(i) := l2(i).pf_l2send_node.get
-//  }
-//  l3.pf_l3recv_node.get := l3pf_RecvXbar.outNode.head
+  val l3pf_RecvXbar = LazyModule(new PrefetchReceiverXbar(nrL2))
+  for (i <- 0 until nrL2) {
+    l3pf_RecvXbar.inNode(i) := l2(i).pf_l2send_node.get
+  }
+  l3.pf_l3recv_node.get := l3pf_RecvXbar.outNode.head
 
   ram.node :=
     TLXbar() :=*

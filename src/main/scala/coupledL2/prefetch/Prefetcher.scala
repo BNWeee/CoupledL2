@@ -118,6 +118,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io = IO(new PrefetchIO)
   val io_pf_en = IO(Input(Bool()))
   val io_llc = if(prefetchSendOpt.nonEmpty) Some(IO(Output(new l2PrefetchSend))) else None
+
+  io.evict := DontCare
   //configSwitch
   //L2-->1.l2prefetchRecv/l2prefetch 3.l3prefetchSend
   val configTuple = (prefetchOpt.nonEmpty, prefetchSendOpt.nonEmpty)
@@ -157,7 +159,8 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
           bop.io.req.ready := true.B
           pipe.io.in <> pftQueue.io.deq
           io.req <> pipe.io.out
-
+          io.evict := DontCare
+          io.evict.ready := true.B
           //llc prefetchSend
           val sent2llc_valid=Counter(io.req.valid,10)._2
           io_llc.get.pf_en := true.B

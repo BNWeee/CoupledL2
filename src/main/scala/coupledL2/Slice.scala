@@ -80,6 +80,8 @@ class Slice()(implicit p: Parameters) extends L2Module {
   mshrCtl.io.nestedwb := mainPipe.io.nestedwb
   mshrCtl.io.pbRead <> sinkA.io.pbRead
   mshrCtl.io.pbResp <> sinkA.io.pbResp
+  mshrCtl.io.prefetchTrain.get.ready := true.B
+  mshrCtl.io.prefetchEvict.get.ready :=true.B
 
   directory.io.resp <> mainPipe.io.dirResp_s3
   directory.io.metaWReq <> mainPipe.io.metaWReq
