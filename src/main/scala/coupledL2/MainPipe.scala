@@ -27,7 +27,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import coupledL2.utils._
 import coupledL2.debug._
-import coupledL2.prefetch.PrefetchTrain
+import coupledL2.prefetch.{PrefetchTrain,PrefetchEvict}
 
 class MainPipe(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -100,7 +100,7 @@ class MainPipe(implicit p: Parameters) extends L2Module {
     val globalCounter = Input(UInt(log2Ceil(mshrsAll).W))
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
-
+    val prefetchEvict = prefetchOpt.map(_ => DecoupledIO(new PrefetchEvict))
     val toMonitor = Output(new MainpipeMoni())
   })
 
@@ -412,6 +412,13 @@ class MainPipe(implicit p: Parameters) extends L2Module {
       train.bits.set := req_s3.set
       train.bits.needT := req_needT_s3
       train.bits.source := req_s3.sourceId
+  }
+  io.prefetchEvict.foreach{
+    evict =>
+    evict.valid := task_s3.valid && ((req_acquire_s3 || req_get_s3)) && req_s3.needHint.getOrElse(false.B) &&
+      !meta_s3.state=/=INVALID && (!dirResult_s3.hit || meta_s3.prefetch.get) //fixme: maybe wrong
+      evict.bits.tag := req_s3.tag
+      evict.bits.set := req_s3.set
   }
 
   /* ======== Stage 4 ======== */

@@ -25,7 +25,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import chipsalliance.rocketchip.config.Parameters
-import coupledL2.prefetch.PrefetchTrain
+import coupledL2.prefetch.{PrefetchTrain,PrefetchEvict}
 import coupledL2.utils.XSPerfAccumulate
 
 class MSHRTasks(implicit p: Parameters) extends L2Bundle {
@@ -33,7 +33,8 @@ class MSHRTasks(implicit p: Parameters) extends L2Bundle {
   val source_a = DecoupledIO(new SourceAReq) // To AcquireUnit  // TODO: no need to use decoupled handshake
   val source_b = DecoupledIO(new SourceBReq)
   val mainpipe = DecoupledIO(new TaskBundle) // To Mainpipe (SourceC or SourceD)
-  // val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
+  val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain)) // To prefetcher
+  val prefetchEvict = prefetchOpt.map(_ => DecoupledIO(new PrefetchEvict))
 }
 
 class MSHRResps(implicit p: Parameters) extends L2Bundle {
@@ -126,7 +127,8 @@ class MSHR(implicit p: Parameters) extends L2Module {
   val mp_probeack_valid = !state.s_probeack && state.w_pprobeacklast
   val mp_grant_valid = !state.s_refill && state.w_grantlast && state.w_rprobeacklast && state.s_release // [Alias] grant after rprobe done
   io.tasks.mainpipe.valid := mp_release_valid || mp_probeack_valid || mp_grant_valid
-  // io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
+  io.tasks.prefetchTrain.foreach(t => t.valid := !state.s_triggerprefetch.getOrElse(true.B))
+  io.tasks.prefetchEvict.foreach(t => t.valid := !state.s_prefetchevict.getOrElse(true.B))
 
   val a_task = {
     val oa = io.tasks.source_a.bits
@@ -349,13 +351,19 @@ class MSHR(implicit p: Parameters) extends L2Module {
   )
   io.tasks.mainpipe.bits.reqSource := req.reqSource
 
-  // io.tasks.prefetchTrain.foreach {
-  //   train =>
-  //     train.bits.tag := req.tag
-  //     train.bits.set := req.set
-  //     train.bits.needT := req_needT
-  //     train.bits.source := req.source
-  // }
+   io.tasks.prefetchTrain.foreach {
+     train =>
+       train.bits.tag := req.tag
+       train.bits.set := req.set
+       train.bits.needT := req_needT
+       train.bits.source := req.source
+   }
+
+  io.tasks.prefetchEvict.foreach {
+    evict =>
+      evict.bits.tag := req.tag
+      evict.bits.set := req.set
+  }
 
   /* ======== Task update ======== */
   when (io.tasks.source_a.fire) {
@@ -375,12 +383,15 @@ class MSHR(implicit p: Parameters) extends L2Module {
       state.s_probeack := true.B
     }
   }
-  // prefetchOpt.foreach {
-  //   _ =>
-  //     when (io.tasks.prefetchTrain.get.fire()) {
-  //       state.s_triggerprefetch.get := true.B
-  //     }
-  // }
+   prefetchOpt.foreach {
+     _ =>
+       when (io.tasks.prefetchTrain.get.fire()) {
+         state.s_triggerprefetch.get := true.B
+       }
+       when (io.tasks.prefetchEvict.get.fire()){
+         state.s_prefetchevict.get := true.B
+       }
+   }
 
   /* ======== Refill response ======== */
   val c_resp = io.resps.sink_c

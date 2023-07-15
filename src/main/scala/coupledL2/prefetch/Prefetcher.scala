@@ -31,6 +31,14 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   val needT = Bool()
   val source = UInt(sourceIdBits.W)
   val isBOP = Bool()
+  def addr = Cat(tag, set, 0.U(offsetBits.W))
+}
+
+class PrefetchEvict(implicit p: Parameters) extends PrefetchBundle {
+  // val id = UInt(sourceIdBits.W)
+  val tag = UInt(fullTagBits.W)
+  val set = UInt(setBits.W)
+  def addr = Cat(tag, set, 0.U(offsetBits.W))
 }
 
 class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
@@ -56,6 +64,7 @@ class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   val train = Flipped(DecoupledIO(new PrefetchTrain))
   val req = DecoupledIO(new PrefetchReq)
   val resp = Flipped(DecoupledIO(new PrefetchResp))
+  val evict = Flipped(DecoupledIO(new PrefetchEvict))
   val recv_addr = Flipped(ValidIO(UInt(64.W)))
 }
 
@@ -110,14 +119,10 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val io_pf_en = IO(Input(Bool()))
   val io_llc = if(prefetchSendOpt.nonEmpty) Some(IO(Output(new l2PrefetchSend))) else None
   //configSwitch
-  //L2-->1.l1prefetchRecv 2.l2prefetch 3.l3prefetchSend
-  //L3-->1.l2prefetchRecv 2.l3prefetch 3.None
-  val configTuple = (prefetchRecvOpt.nonEmpty, prefetchOpt.nonEmpty, prefetchSendOpt.nonEmpty,cacheParams.level)
-  println(configTuple)
+  //L2-->1.l2prefetchRecv/l2prefetch 3.l3prefetchSend
+  val configTuple = (prefetchOpt.nonEmpty, prefetchSendOpt.nonEmpty)
   configTuple match {
-    case(true ,false,false,2) => {
-    }
-    case(false,true ,false,2) => {
+    case(true ,false) => {
       prefetchOpt.get match {
         case bop: BOPParameters =>
           val pft = Module(new BestOffsetPrefetch)
@@ -130,57 +135,50 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
           io.req <> pipe.io.out
       }
     }
-    case(true ,true ,true ,2) => {
-      println("l2Prefetch Config: l1pfRecv + l2bop + l3pfSend")
-      println(s"L${cacheParams.name} prefetcher: BestOffsetPrefetch+PrefetchSender")
-      val l1_pf = Module(new PrefetchReceiver())
-      val bop = Module(new BestOffsetPrefetch())
+    case(true ,true) => {
       val pftQueue = Module(new PrefetchQueue)
       val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
-      val bop_en = RegNextN(io_pf_en, 2, Some(true.B))
-      // l1 prefetch
-      l1_pf.io.recv_addr := ValidIODelay(io.recv_addr, 2)
-      // l2 prefetch
-      bop.io.train <> io.train
-      bop.io.resp <> io.resp
-      // send to prq
-      pftQueue.io.enq.valid := false.B && (l1_pf.io.req.valid || (bop_en && bop.io.req.valid))
-      pftQueue.io.enq.bits := Mux(l1_pf.io.req.valid,
-        l1_pf.io.req.bits,
-        bop.io.req.bits
-      )
-      l1_pf.io.req.ready := true.B
-      bop.io.req.ready := true.B
-      pipe.io.in <> pftQueue.io.deq
-      io.req <> pipe.io.out
+      val l2_pf_en = RegNextN(io_pf_en,2,Some(true.B))
 
-      //llc prefetchSend
-      io_llc.get.pf_en := true.B
-      io_llc.get.addr_valid := io.req.valid
-      io_llc.get.addr := Cat(io.req.bits.tag, io.req.bits.set, 0.U((offsetBits + bankBits).W))
-    }
-    case(true ,false,false,3) => {
-      println(s"L${cacheParams.name}Prefetch Config: l2bop hint2LLC + l3PrefetchReceiver_llc")
-      val l3_pfReceiver = Module(new PrefetchReceiver_llc())
-      l3_pfReceiver.io.recv_addr := io.recv_addr
-      io.train <> l3_pfReceiver.io.train
-      io.resp <> l3_pfReceiver.io.resp
-      io.req <> l3_pfReceiver.io.req
-    }
-    case(false,true ,false,3) =>{
       prefetchOpt.get match {
-        case bop: BOPParameters =>
-          val pft = Module(new BestOffsetPrefetch)
-          val pftQueue = Module(new PrefetchQueue)
-          val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
-          pft.io.train <> io.train
-          pft.io.resp <> io.resp
-          pftQueue.io.enq <> pft.io.req
+        case pf: BOPParameters =>
+          println(s"${cacheParams.name} prefetcher: BestOffsetPrefetch+PrefetchSender")
+          val bop = Module(new BestOffsetPrefetch)
+          bop.io.train <> io.train
+          bop.io.resp <> io.resp
+          pftQueue.io.enq <> bop.io.req
           pipe.io.in <> pftQueue.io.deq
           io.req <> pipe.io.out
+
+          // send to prq
+          pftQueue.io.enq.valid :=l2_pf_en && bop.io.req.valid
+          pftQueue.io.enq.bits := bop.io.req.bits
+
+          bop.io.req.ready := true.B
+          pipe.io.in <> pftQueue.io.deq
+          io.req <> pipe.io.out
+
+          //llc prefetchSend
+          val sent2llc_valid=Counter(io.req.valid,10)._2
+          io_llc.get.pf_en := true.B
+          io_llc.get.addr_valid := sent2llc_valid
+          io_llc.get.addr := Cat(io.req.bits.tag, io.req.bits.set, 0.U(offsetBits.W))
+
+        case branch2: PrefetchBranchV2Params =>
+          val hybrid_pfts = Module(new PrefetchBranchV2())
+          val pftQueue = Module(new PrefetchQueue)
+          val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
+          hybrid_pfts.io.train <> io.train
+          hybrid_pfts.io.resp <> io.resp
+          hybrid_pfts.io.recv_addr := ValidIODelay(io.recv_addr, 2)
+          hybrid_pfts.io.evict <> io.evict
+          pftQueue.io.enq <> hybrid_pfts.io.req
+          pipe.io.in <> pftQueue.io.deq
+          io.req <> pipe.io.out
+
       }
     }
-    case(_,_,_,_) => {
+    case(_,_) => {
       io := DontCare
       io_pf_en := DontCare
     }

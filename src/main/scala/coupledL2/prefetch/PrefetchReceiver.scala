@@ -35,10 +35,9 @@ class PrefetchRecv extends Bundle {
   val pf_en = Bool()
 }
 
-class l2PrefetchRecv extends PrefetchRecv {
-}
 class l2PrefetchSend extends PrefetchRecv {
 }
+
 case class PrefetchReceiverParams(n: Int = 32) extends PrefetchParameters {
   override val hasPrefetchBit: Boolean = true
   override val inflightEntries: Int = n
@@ -74,10 +73,10 @@ class PrefetchReceiver_llc()(implicit p: Parameters) extends PrefetchModule {
 }
 
 class PrefetchReceiverXbar(val clientNum:Int=2)(implicit p: Parameters) extends LazyModule{
-  val inNode = Seq.fill(clientNum)(BundleBridgeSink(Some(() => new coupledL2.prefetch.l2PrefetchRecv())))
+  val inNode = Seq.fill(clientNum)(BundleBridgeSink(Some(() => new coupledL2.prefetch.l2PrefetchSend())))
   val outNode = Seq.fill(1)(BundleBridgeSource(Some(() => new huancun.prefetch.l3PrefetchRecv())))
   lazy val module = new LazyModuleImp(this){
-    val arbiter = Module(new Arbiter(new coupledL2.prefetch.l2PrefetchRecv(), clientNum))
+    val arbiter = Module(new Arbiter(new coupledL2.prefetch.l2PrefetchSend(), clientNum))
     arbiter.suggestName(s"pf_l3recv_node_arb")
     for (i <- 0 until clientNum) {
       arbiter.io.in(i).valid := inNode(i).in.head._1.addr_valid
@@ -86,7 +85,10 @@ class PrefetchReceiverXbar(val clientNum:Int=2)(implicit p: Parameters) extends 
       arbiter.io.in(i).bits.pf_en := inNode(i).in.head._1.pf_en
       arbiter.io.in(i).ready := DontCare
     }
-    outNode.head.out.head._1 <> arbiter.io.out.bits
+    arbiter.io.out.valid := DontCare
+    outNode.head.out.head._1.addr_valid := arbiter.io.out.bits.addr_valid
+    outNode.head.out.head._1.addr := arbiter.io.out.bits.addr
+    outNode.head.out.head._1.pf_en := arbiter.io.out.bits.pf_en
     arbiter.io.out.ready := true.B
   }
 }

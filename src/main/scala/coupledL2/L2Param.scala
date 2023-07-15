@@ -126,7 +126,6 @@ case class L2Param
   // Prefetch
   prefetch: Option[PrefetchParameters] = None,
   prefetchSend: Option[PrefetchParameters] = None,
-  prefetchRecv: Option[PrefetchParameters] = None,
   // Performance analysis
   enablePerf: Boolean = true,
   // Monitor
