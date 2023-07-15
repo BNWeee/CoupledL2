@@ -135,6 +135,31 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
           pftQueue.io.enq <> pft.io.req
           pipe.io.in <> pftQueue.io.deq
           io.req <> pipe.io.out
+        case pf: PrefetchReceiverParams =>
+          println(s"${cacheParams.name} prefetcher: SMSPrefetch+BestOffsetPrefetch")
+          val l1_pf = Module(new PrefetchReceiver())
+          val bop = Module(new BestOffsetPrefetch())
+          val pftQueue = Module(new PrefetchQueue)
+          val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
+          val bop_en = RegNextN(io_pf_en, 2, Some(true.B))
+          // l1 prefetch
+          l1_pf.io.recv_addr := ValidIODelay(io.recv_addr, 2)
+          l1_pf.io.train <> DontCare
+          l1_pf.io.resp <> DontCare
+          l1_pf.io.evict <> DontCare
+          // l2 prefetch
+          bop.io.train <> io.train
+          bop.io.resp <> io.resp
+          // send to prq
+          pftQueue.io.enq.valid := l1_pf.io.req.valid || (bop_en && bop.io.req.valid)
+          pftQueue.io.enq.bits := Mux(l1_pf.io.req.valid,
+            l1_pf.io.req.bits,
+            bop.io.req.bits
+          )
+          l1_pf.io.req.ready := true.B
+          bop.io.req.ready := true.B
+          pipe.io.in <> pftQueue.io.deq
+          io.req <> pipe.io.out
       }
     }
     case(true ,true) => {

@@ -34,7 +34,8 @@ class PrefetchRecv extends Bundle {
   val addr_valid = Bool()
   val pf_en = Bool()
 }
-
+class l2PrefetchRecv extends PrefetchRecv {
+}
 class l2PrefetchSend extends PrefetchRecv {
 }
 
@@ -55,7 +56,7 @@ class PrefetchReceiver()(implicit p: Parameters) extends PrefetchModule {
   io.req.bits.isBOP := false.B
   io.req.bits.source := 0.U // TODO: ensure source 0 is dcache
   io.req.valid := io.recv_addr.valid
-
+  io.evict := DontCare
 }
 
 class PrefetchReceiver_llc()(implicit p: Parameters) extends PrefetchModule {

@@ -47,7 +47,7 @@ case class BOPParameters(
 }
 
 trait HasBOPParams extends HasCoupledL2Parameters {
-  val bopParams = prefetchOpt.get.asInstanceOf[BOPParameters]
+  val bopParams = BOPParameters()
   // Best offset
   val defaultMinAddrBits = offsetBits + log2Up(bopParams.rrTableEntries) + bopParams.rrTagBits
   val defaultConfig = fullAddressBits >= defaultMinAddrBits

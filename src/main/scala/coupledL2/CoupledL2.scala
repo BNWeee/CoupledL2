@@ -60,7 +60,6 @@ trait HasCoupledL2Parameters {
   // Prefetch
   val prefetchOpt = cacheParams.prefetch
   val prefetchSendOpt = cacheParams.prefetchSend
-  val hasPrefetchRecv = cacheParams.prefetch.isInstanceOf[coupledL2.prefetch.PrefetchReceiverParams]
   val hasPrefetchBit = prefetchOpt.nonEmpty && prefetchOpt.get.hasPrefetchBit|| prefetchSendOpt.get.hasPrefetchBit
   val topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
@@ -210,8 +209,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     case (2,Some(x)) => Some(BundleBridgeSource(Some(() => new l2PrefetchSend())))
     case (_,_) => None
   }
-  val pf_l2recv_node = hasPrefetchRecv match {
-    case true => Some(BundleBridgeSink(Some(() => new huancun.prefetch.l2PrefetchRecv())))
+  val pf_l2recv_node = cacheParams.prefetch match {
+    case Some(x:PrefetchReceiverParams) => Some(BundleBridgeSink(Some(() => new l2PrefetchRecv())))
     case _ => None
   }
 
