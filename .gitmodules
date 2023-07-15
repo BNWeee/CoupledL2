@@ -6,4 +6,4 @@
 	url = https://github.com/OpenXiangShan/utility
 [submodule "HuanCun"]
 	path = HuanCun
-	url = https://github.com/OpenXiangShan/HuanCun.git
+	url = git@github.com:huangliwood/HuanCun.git
