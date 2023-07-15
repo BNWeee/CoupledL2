@@ -260,11 +260,13 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     }
     val prefetcher = prefetchOpt.map(_ => Module(new Prefetcher()(pftParams)))
     val prefetchTrains = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchTrain()(pftParams)))))
+    val prefetchEvict = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchEvict()(pftParams)))))
     val prefetchResps = prefetchOpt.map(_ => Wire(Vec(banks, DecoupledIO(new PrefetchResp()(pftParams)))))
     val prefetchReqsReady = WireInit(VecInit(Seq.fill(banks)(false.B)))
     prefetchOpt.foreach {
       _ =>
         fastArb(prefetchTrains.get, prefetcher.get.io.train, Some("prefetch_train"))
+        fastArb(prefetchEvict.get,prefetcher.get.io.evict, Some("prefetch_evict"))
         prefetcher.get.io.req.ready := Cat(prefetchReqsReady).orR
         fastArb(prefetchResps.get, prefetcher.get.io.resp, Some("prefetch_resp"))
     }
@@ -326,7 +328,9 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
             prefetchReqsReady(i) := s.req.ready && bank_eq(p.io.req.bits.set, i, bankBits)
             val train = Pipeline(s.train)
             val resp = Pipeline(s.resp)
+            val evict = Pipeline(s.evict)
             prefetchTrains.get(i) <> train
+            prefetchEvict.get(i) <> evict
             prefetchResps.get(i) <> resp
             // restore to full address
             if(bankBits != 0){
@@ -334,12 +338,18 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
                 train.bits.tag, train.bits.set, i.U(bankBits.W), 0.U(offsetBits.W)
               )
               val (train_tag, train_set, _) = s.parseFullAddress(train_full_addr)
+              val evict_full_addr = Cat(
+                evict.bits.tag, evict.bits.set, i.U(bankBits.W), 0.U(offsetBits.W)
+              )
+              val (evict_tag, evict_set, _) = s.parseFullAddress(evict_full_addr)
               val resp_full_addr = Cat(
                 resp.bits.tag, resp.bits.set, i.U(bankBits.W), 0.U(offsetBits.W)
               )
               val (resp_tag, resp_set, _) = s.parseFullAddress(resp_full_addr)
               prefetchTrains.get(i).bits.tag := train_tag
               prefetchTrains.get(i).bits.set := train_set
+              prefetchEvict.get(i).bits.tag := evict_tag
+              prefetchEvict.get(i).bits.set := evict_set
               prefetchResps.get(i).bits.tag := resp_tag
               prefetchResps.get(i).bits.set := resp_set
             }
