@@ -207,6 +207,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
   val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] = prefetchOpt match {
     case Some(_: PrefetchReceiverParams) =>
       Some(BundleBridgeSink(Some(() => new PrefetchRecv)))
+    // case Some(_: HyperPrefetchParams) =>
+    //   Some(BundleBridgeSink(Some(() => new PrefetchRecv)))
     case _ => None
   }
 
