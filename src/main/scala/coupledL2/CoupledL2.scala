@@ -310,11 +310,6 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       case None =>
     }
 
-    println(s"CPL2 OPTS ! ")
-    println(prefetchOpt.get)
-    println(sppMultiLevelRefillOpt.get)
-    println(pf_recv_node)
-    println(spp_send_node)
     def restoreAddress(x: UInt, idx: Int) = {
       restoreAddressUInt(x, idx.U)
     }
