@@ -215,13 +215,47 @@ class Prefetcher(parentName:String = "Unknown")(implicit p: Parameters) extends 
     
     case hyperPf: HyperPrefetchParams => // case spp +  bop + smsReceiver
       hasSpp = true
-      val hybrid_pfts = Module(new HyperPrefetchDev2(parentName + "hpft_"))
-      hybrid_pfts.io.l2_pf_en := RegNextN(io_l2_pf_en,2,Some(true.B))
-      hybrid_pfts.io.l2_pf_ctrl := RegNextN(io_l2_pf_ctrl,2,Some(0.U))
+      val hybrid_pfts = Module(new HyperPrefetcher(parentName + "hpft_"))
+      val pftQueue = Module(new PrefetchQueue)
+      val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
+      // hybrid_pfts.io.l2_pf_en := RegNextN(io_l2_pf_en,2,Some(true.B))
+      // hybrid_pfts.io.l2_pf_ctrl := RegNextN(io_l2_pf_ctrl,2,Some(0.U))
+      val (counterValue, counterWrap) = Counter(true.B, 1024)
+      val deadPfEviction = RegInit(0.U(13.W))
+      val issued = RegInit(0.U(16.W))
+      val pf_state = WireInit(0.U(2.W))
+      dontTouch(pf_state)
+      io.evict match {
+        case Some(evict) =>
+        when(evict.valid && evict.bits.is_prefetch) {
+          deadPfEviction := deadPfEviction + 1.U
+        }
+        case None =>
+      }
+      when(io.req.fire) {
+        issued := issued + 1.U
+      }
+      when(counterWrap) {
+        deadPfEviction := 0.U
+        issued := 0.U
+        // deadPfEviction/issued > 0.75, 
+        when((deadPfEviction << 2) > issued + issued + issued) {
+          pf_state := 3.U
+        } .elsewhen((deadPfEviction << 1) > issued) {
+          pf_state := 2.U
+        } .elsewhen((deadPfEviction << 2) > issued) {
+          pf_state := 1.U
+        } .otherwise {
+          pf_state := 0.U
+        }
+      }
       hybrid_pfts.io.train <> io.train
       hybrid_pfts.io.resp <> io.resp
       hybrid_pfts.io.recv_addr := ValidIODelay(io.recv_addr, 2)
       io.req <> hybrid_pfts.io.req
+      pftQueue.io.enq <> hybrid_pfts.io.req
+      pipe.io.in <> pftQueue.io.deq
+      io.req <> pipe.io.out
       io.evict match {
         case Some(evict) =>
         hybrid_pfts.io.evict <> evict
@@ -235,9 +269,9 @@ class Prefetcher(parentName:String = "Unknown")(implicit p: Parameters) extends 
           sender <> 0.U.asTypeOf(io.hint2llc.get.cloneType) //hybrid_pfts.io.hint2llc
         case _ => println(s"${cacheParams.name} Prefetch Config: BOP + SMS receiver + SPP")
       }
-      // hybrid_pfts.io.queue_used := pftQueue.io.used
-      // hybrid_pfts.io.db_degree.valid := counterWrap
-      // hybrid_pfts.io.db_degree.bits := pf_state
+      hybrid_pfts.io.queue_used := pftQueue.io.used
+      hybrid_pfts.io.db_degree.valid := counterWrap
+      hybrid_pfts.io.db_degree.bits := pf_state
     case _ => assert(cond = false, "Unknown prefetcher")
   }
   val mbistPl = MBISTPipeline.PlaceMbistPipeline(2,
