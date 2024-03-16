@@ -22,6 +22,7 @@ import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
 import coupledL2.HasCoupledL2Parameters
+import coupledL2.PfSource
 import xs.utils.perf.HasPerfLogging
 
 case class BOPParameters(
