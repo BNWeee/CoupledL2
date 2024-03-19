@@ -118,7 +118,7 @@ trait HasSPPParams extends HasCoupledL2Parameters {
   val pageAddrBits = fullAddressBits - pageOffsetBits
   val blkAddrBits = fullAddressBits - offsetBits
   val blkOffsetBits = pageOffsetBits - offsetBits
-  val sTagBits = signatureBits - log2Up(sTableEntries)
+  val sTagBits = pageAddrBits - log2Up(sTableEntries)
   val pTagBits = signatureBits - log2Up(pTableEntries)
   val fTagBits = pageAddrBits - log2Up(fTableEntries)
   val deltaBits = blkOffsetBits + 1
@@ -126,13 +126,13 @@ trait HasSPPParams extends HasCoupledL2Parameters {
 
   def strideMap(a: SInt) : UInt = {
     val out = WireInit(0.U(3.W))
-    when(a <= -4.S) {
+    when(a <= -5.S) {
       out := "b100".U
-    } .elsewhen(a >= 4.S) {
-      out := "b000".U
-    } .elsewhen(-4.S<=a && a <= -3.S) {
+    } .elsewhen(a >= 5.S) {
+      out := "b011".U
+    } .elsewhen(a <= -3.S && a >= -4.S) {
       out := "b101".U
-    } .elsewhen(3.S <= a && a <= 4.S) {
+    } .elsewhen(a <= 4.S && a >= 3.S) {
       out := "b000".U
     } .otherwise {
       out := a.asUInt(2, 0)
@@ -288,7 +288,7 @@ class SignatureTable(parentName: String = "Unknown")(implicit p: Parameters) ext
   def hash1(addr:    UInt) = addr(log2Up(sTableEntries) - 1, 0)
   def hash2(addr:    UInt) = addr(2 * log2Up(sTableEntries) - 1, log2Up(sTableEntries))
   def get_idx(addr:      UInt) = hash1(addr) ^ hash2(addr)
-  def get_tag(addr:      UInt) = addr(signatureBits - 1, log2Up(sTableEntries))
+  def get_tag(addr:      UInt) = addr(pageAddrBits - 1, log2Up(sTableEntries))
   def get_pageAddr(blkAddr: UInt) = blkAddr(blkAddrBits - 1, blkOffsetBits)
   def get_bpIdx(pageAddr: UInt) = pageAddr(log2Up(bpTableEntries) - 1, 0) ^ pageAddr(2 * log2Up(bpTableEntries) - 1, log2Up(bpTableEntries))
   def get_bp_tag(pageAddr: UInt) = pageAddr(pageAddrBits - 1, log2Up(bpTableEntries))
@@ -395,7 +395,7 @@ class SignatureTable(parentName: String = "Unknown")(implicit p: Parameters) ext
   when(s1_valid && s1_delta =/= 0.S){
     sTable(get_idx(s1_req.get_pageAddr)).valid := true.B
     sTable(get_idx(s1_req.get_pageAddr)).tag := get_tag(s1_req.get_pageAddr)
-    sTable(get_idx(s1_req.get_pageAddr)).sig := makeSign(s1_oldSig,s1_delta)
+    sTable(get_idx(s1_req.get_pageAddr)).sig := Mux(s1_hit,makeSign(s1_oldSig,s1_delta),makeSign(0.U,s1_delta))
     sTable(get_idx(s1_req.get_pageAddr)).last_blkOff := s1_req.get_blkOff
   }
   // s0 send response to paternTable
